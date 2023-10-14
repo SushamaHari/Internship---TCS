@@ -1,0 +1,509 @@
+# RIO- 125 Classification Model - Build a Model that Classifies the Side Effects of a Drug
+
+# Life cycle of data analysis projects
+1.Data Analysis
+
+2.Feature Engineering
+
+3.Feature Selection
+
+4.Model Building
+
+5.Model Deployment
+
+pip install spacy
+
+pip install --upgrade spacy
+
+!python -m spacy download en_core_web_sm
+
+import numpy as np
+import pandas as pd
+from random import choice, sample
+import matplotlib.pyplot as plt
+import seaborn as sns
+%matplotlib inline
+
+from sklearn.preprocessing import PowerTransformer
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.pipeline import Pipeline
+
+import itertools
+import math
+import re
+import string
+import spacy
+import warnings
+warnings.filterwarnings("ignore")
+
+from collections import Counter
+from nltk.corpus import stopwords
+
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS as sklearn_stop_words
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+# Loading Dataset
+
+data = pd.read_csv(r"C:\Users\susha\Downloads\webmd.csv")
+
+# Data Understanding
+
+data.shape
+
+data.head()
+
+data.info()
+
+data.describe()
+
+#### Description of the dataset
+Name : Name of the patient
+
+Race : Race of the patient
+
+Age : Age of the patient
+
+Condition : Condition/symptom from which the patient is suffering
+
+Date : Date of usage
+
+Drug : Name of the drug
+
+DrugId : Identity/code of drug
+
+EaseofUse : Patient's 10-Star rating on the ease of use of drug
+
+Effectiveness : Patient's 10-Star rating on the effectiveness of drug
+
+Reviews : Patient's review
+
+Satisfaction : Patient's 10-Star rating on satisfaction
+
+Sex : Gender of the patient
+
+Sides : Side effects of the drug
+
+UsefulCount : Number of users who found the review useful
+
+# Add names and races columns
+
+pip install mimesis
+
+from mimesis import Person
+person = Person('en')
+
+# function to create names to exact rows
+def fake_names(n):
+   name = []
+   for _ in range(0, n):
+        name.append(person.name())
+   return name
+
+names = fake_names(362806)
+
+data_name = pd.DataFrame(list(zip(names)),columns = ['Name'])
+
+data_name.head()
+
+import random
+
+options = [("White", 0.32), ("Hispanic", 0.28), ("Black", 0.22), ("Asian", 0.18)]
+words = []
+
+for i in range(362806):
+    word = random.choices([o[0] for o in options], [o[1] for o in options])[0]
+    words.append(word)
+
+data_race=pd.DataFrame(words, columns = ['Race'])
+
+data_race.head()
+
+data1 = pd.concat([data_name, data_race, data], axis=1).reindex(data.index)
+data1.head()
+
+# Rename the column sides
+data1 = data1.rename(columns={'Sides':'SideEffects'})
+
+data1['Year'] = pd.to_datetime(data1['Date'], errors='coerce').dt.year
+data1['Month'] = pd.to_datetime(data1['Date'], errors='coerce').dt.month
+data1['day_of_week'] = pd.to_datetime(data1['Date'], errors='coerce').dt.day_name()
+
+dataset is ready for EDA and preprocessing
+
+data1.Sex.value_counts()
+
+data.Drug.value_counts()
+
+data1.SideEffects.value_counts()
+
+data1.Age.value_counts()
+
+data1.Satisfaction.value_counts()
+
+# Creating a list of numerical values
+
+numerical_features = [feature for feature in data1.columns if data1[feature].dtypes != 'O']
+
+print("The length of numerical variables: " ,len(numerical_features),'\n')
+
+#display the numerical variables
+
+data1[numerical_features].head()
+
+#Numerical Variables are usually of two types - Continuous and discrete
+
+discrete_feature = [feature for feature in numerical_features if len(data1[feature].unique())<25]  # Simply consider values below 25 as discrete
+
+print("Discrete Variables Count: {}".format(len(discrete_feature)))
+print('Discrete variables are ',discrete_feature)
+
+continuous_feature = [feature for feature in numerical_features if feature not in discrete_feature]
+print("Continuous feature Count {}".format(len(continuous_feature)))
+print('Continuous variables are ', continuous_feature)
+
+categorical_features = [feature for feature in data1.columns if data1[feature].dtypes=='O']
+print("Categorical feature Count {}".format(len(categorical_features)))
+print('Categorical variables are ', categorical_features)
+
+#Checking Cardinality
+
+for feature in categorical_features:
+    print("The feature is {} and number of labels are {}".format(feature,len(data1[feature].unique())))
+
+# **BIVARIATE ANALYSIS**
+
+**Bar Plot**
+
+#Finding Relationship with Discrete features and Satisfaction
+
+for feature in discrete_feature:
+    df = data1.copy()
+    df.groupby(feature)['Satisfaction'].median().plot.bar()
+    plt.xlabel(feature)
+    plt.ylabel('Satisfaction')
+    plt.title(feature)
+    plt.show()
+
+From the graph it is evident that as the Ease of use and Effectiveness increased the satisfaction levels also increased.
+
+**UNIVARIATE ANALYSIS**
+
+**Histogram**
+
+#Analyzing the Distribution of Continuous variables
+
+for feature in continuous_feature:
+    df = data1.copy()
+    df[feature].hist(bins=25)
+    plt.xlabel(feature)
+    plt.ylabel('Count')
+    plt.title(feature)
+    plt.show()
+
+The histogram shows that the data distribution is skewed.
+
+# Bar Charts of some categorical columns
+
+plt.figure(figsize=(12, 4))
+plt.subplot(121)
+sns.countplot(data=data1, x='Age')
+plt.xticks(rotation=45)
+plt.subplot(122)
+sns.countplot(data=data1, x='Sex')
+plt.show()
+
+From the graph it is evident that females users are more than male users. And the age age group of 45-54 are predominant users than other age group.
+
+# Top 20 Drugs based on No. of Users
+
+data_= data1['Drug'].value_counts().head(20).reset_index()
+data_.columns = ['Drug', 'Name']
+sns.barplot(data=data_, x = 'Drug', y = 'Name')
+plt.suptitle("Top 20 Drugs")
+plt.xticks(rotation=90,fontsize=10)
+plt.show()
+
+So the most commmonly used drug is cymbalta followed by lisinopril. All these 20 druge were used by more than 2000 people.
+
+# Top 15 Conditions
+
+data['Condition'].value_counts().nlargest(20).plot(kind='bar',figsize=(8,8))
+plt.suptitle("Top 15 Conditions")
+plt.xlabel('Conditions')
+plt.ylabel('Users')
+
+#### As much as 50,000 users have reported other conditions followed by Pain topped the list with more than 25000 people reporting it.
+
+sns.countplot(x='Race',hue='Sex',data=data1)
+plt.title("Users by Race and Gender", fontsize = 10)
+plt.tight_layout()
+plt.show()
+
+In all the races females are using drugs more than males and others.
+
+plt.figure(figsize=(10, 4))
+sns.histplot(data=data, x='EaseofUse', bins=10, kde=True)
+plt.title('Distribution of Ease of Use Ratings')
+plt.xlabel('EaseofUse')
+plt.ylabel('Frequency')
+plt.show()
+
+# Summary statistics
+easeofuse_mean = data['EaseofUse'].mean()
+easeofuse_median = data['EaseofUse'].median()
+easeofuse_std = data['EaseofUse'].std()
+print(f"Mean EaseofUse: {easeofuse_mean:.2f}")
+print(f"Median EaseofUse: {easeofuse_median:.2f}")
+print(f"Standard Deviation EaseofUse: {easeofuse_std:.2f}")
+
+plt.figure(figsize=(10, 4))
+sns.histplot(data=data, x='Effectiveness', bins=10, kde=True)
+plt.title('Distribution of Effectiveness Ratings')
+plt.xlabel('Effectiveness')
+plt.ylabel('Frequency')
+plt.show()
+
+# Summary statistics
+effectiveness_mean = data['Effectiveness'].mean()
+effectiveness_median = data['Effectiveness'].median()
+effectiveness_std = data['Effectiveness'].std()
+print(f"Mean Effectiveness: {effectiveness_mean:.2f}")
+print(f"Median Effectiveness: {effectiveness_median:.2f}")
+print(f"Standard Deviation Effectiveness: {effectiveness_std:.2f}")
+
+plt.figure(figsize=(10, 4))
+sns.histplot(data=data, x='Satisfaction', bins=10, kde=True)
+plt.title('Distribution of Satisfaction Ratings')
+plt.xlabel('Satisfaction')
+plt.ylabel('Frequency')
+plt.show()
+
+# Summary statistics
+satisfaction_mean = data['Satisfaction'].mean()
+satisfaction_median = data['Satisfaction'].median()
+satisfaction_std = data['Satisfaction'].std()
+print(f"Mean Satisfaction: {satisfaction_mean:.2f}")
+print(f"Median Satisfaction: {satisfaction_median:.2f}")
+print(f"Standard Deviation Satisfaction: {satisfaction_std:.2f}")
+
+plt.figure(figsize=(10, 4))
+sns.histplot(data=data, x='UsefulCount', bins=20, kde=True)
+plt.title('Distribution of Useful Counts for Reviews')
+plt.xlabel('UsefulCount')
+plt.ylabel('Frequency')
+plt.show()
+
+# Summary statistics
+usefulcount_mean = data['UsefulCount'].mean()
+usefulcount_median = data['UsefulCount'].median()
+usefulcount_std = data['UsefulCount'].std()
+print(f"Mean UsefulCount: {usefulcount_mean:.2f}")
+print(f"Median UsefulCount: {usefulcount_median:.2f}")
+print(f"Standard Deviation UsefulCount: {usefulcount_std:.2f}")
+
+#plot graphs for float and int data types
+freqgraph = data1.select_dtypes(include=['int'])
+freqgraph.hist(figsize=(25,15))
+plt.show()
+
+plt.figure(figsize=(10,8))
+g = sns.catplot(x="Effectiveness",col="Sex",
+                data=data1, kind="count",
+                height=6,aspect =.9);
+
+In females efffectiveness of 5 was observed for more than 60000 users.
+
+# Correlation heatmap
+corr_matrix = data1.corr()
+plt.figure(figsize=(8, 6))
+sns.heatmap(corr_matrix, annot=True, cmap='coolwarm')
+plt.title('Correlation Heatmap')
+plt.show()
+
+From the heatmap a positive correlation is found between EaseofUse and effectiveness, Effectiveness and satisfaction and ease of use and satisfaction
+
+# Preprocessing
+
+# Check for missing values:
+
+data1.isna().sum()
+
+# Nan rows were dropped
+data1.dropna(axis = 0, inplace = True)
+data1.isna().sum()
+
+# Handling instances with whitespaces
+for i in data1:
+    data1[i]=np.where(data1[i]==" ",np.NAN,data1[i])
+    
+data1.isna().sum()
+
+data1.dropna(axis=0, inplace = True)
+data1.isna().sum()
+
+#create a boxplot to display outlier
+
+
+num_cols = ['DrugId', 'EaseofUse',
+       'Effectiveness','Satisfaction','UsefulCount']
+for i in num_cols:
+    plt.figure()
+    sns.boxplot(data1[i])
+    plt.title(i)
+
+Drug Id and Useful count column have outliers
+
+# Calculate the quartiles Q1, Q2 (median), and Q3 of the 'DrugId' column :
+
+Q1 = np.percentile(data1['DrugId'],25,interpolation='midpoint')
+Q2 = np.percentile(data1['DrugId'],50,interpolation='midpoint')
+Q3 = np.percentile(data1['DrugId'],75,interpolation='midpoint')
+
+
+#print the quartiles
+
+print('Q1 =', Q1)
+print('Q2 =', Q2)
+print('Q3 =', Q3)
+
+# Calculate the interquartile range (IQR):
+
+IQR = Q3 - Q1
+
+#print iqr
+
+print('IQR =',IQR)
+
+# Define the upper and lower limits for outliers:
+
+up_lim = Q3 + 1.5*IQR
+low_lim = Q1 - 1.5*IQR
+
+print ('up_lim = ', up_lim)
+print ('low_lim = ', low_lim)
+
+
+outliers = []
+
+for x in data1 ['DrugId'] :
+    if (x>up_lim) or (x<low_lim) :
+        outliers.append(x)
+print(outliers)
+
+# Handle the outliers in the 'DrugId' column of the dataset by using flooring and capping:
+
+data1['DrugId'] = np.where(data1['DrugId'] > up_lim, up_lim, np.where(data1['DrugId']<low_lim,low_lim,data1['DrugId']))
+                                                                                                             
+                                                                                                             
+ # Again check for outliers after filling:
+
+plt.figure(figsize=(4, 3))
+sns.boxplot(data1['DrugId'])
+plt.title('Boxplot of DrugId with Handled Outliers')
+plt.show()
+
+# Calculate the quartiles Q1, Q2 (median), and Q3 of the 'EaseofUse' column :
+
+Q1 = np.percentile(data1['UsefulCount'],25,interpolation='midpoint')
+Q2 = np.percentile(data1['UsefulCount'],50,interpolation='midpoint')
+Q3 = np.percentile(data1['UsefulCount'],75,interpolation='midpoint')
+
+
+#print the quartiles
+
+print('Q1 =', Q1)
+print('Q2 =', Q2)
+print('Q3 =', Q3)
+
+# Calculate the interquartile range (IQR):
+
+IQR = Q3 - Q1
+
+
+
+#print iqr
+
+print('IQR =',IQR)
+
+# Define the upper and lower limits for outliers:
+
+up_lim = Q3 + 1.5*IQR
+low_lim = Q1 - 1.5*IQR
+
+print ('up_lim = ', up_lim)
+print ('low_lim = ', low_lim)
+
+
+
+
+
+outliers = []
+
+for x in data1['UsefulCount'] :
+    if (x>up_lim) or (x<low_lim) :
+        outliers.append(x)
+print(outliers)
+
+# Handle the outliers in the 'EaseofUse' column of the dataset by using flooring and capping:
+
+data1['UsefulCount'] = np.where(data1['UsefulCount'] > up_lim, up_lim, np.where(data1['UsefulCount']<low_lim,low_lim,data1['UsefulCount']))
+                                                                                                          
+                                                                                                             
+ # Again check for outliers after filling:
+
+plt.figure(figsize=(4, 3))
+sns.boxplot(data1['UsefulCount'])
+plt.title('Boxplot of UsefulCount with Handled Outliers')
+plt.show()
+
+# Standard scaling
+
+scaler = ['EaseofUse', 'Effectiveness',  'Satisfaction', 'UsefulCount']
+for i in scaler:
+    plt.figure()
+    plt.hist(data1[i])
+    plt.title(i)
+
+data1.EaseofUse.skew()
+
+data1.Effectiveness.skew()
+
+data1.Satisfaction.skew()
+
+data1.UsefulCount.skew()
+
+Inorder to remove the skewness in data standard scaling is performed in the UsefulCount and Ease of use  columns
+
+scaler = MinMaxScaler(feature_range=(1, 2))
+power = PowerTransformer(method='box-cox')
+pipeline = Pipeline(steps=[('s', scaler),('p', power)])
+
+data_EaseofUse = pd.DataFrame(data1['EaseofUse'])
+data_EaseofUse1 = pipeline.fit_transform(data_EaseofUse)
+
+plt.figure(figsize=(10,6))
+plt.hist(data_EaseofUse1)
+plt.title(" Histogram")
+
+data1['EaseofUse_boxcox'] = data_EaseofUse1
+data1.EaseofUse_boxcox.skew()
+
+scaler = MinMaxScaler(feature_range=(1, 2))
+power = PowerTransformer(method='box-cox')
+pipeline = Pipeline(steps=[('s', scaler),('p', power)])
+
+data_UsefulCount = pd.DataFrame(data1['UsefulCount'])
+data_UsefulCount1 = pipeline.fit_transform(data_UsefulCount)
+
+plt.figure(figsize=(10,6))
+plt.hist(data_UsefulCount1)
+plt.title(" Histogram")
+
+data1['UsefulCount_boxcox'] = data_UsefulCount1
+data1.UsefulCount_boxcox.skew()
